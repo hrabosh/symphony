@@ -119,6 +119,7 @@ defmodule SymphonyElixirWeb.Presenter do
         total_tokens: entry.codex_total_tokens
       }
     }
+    |> with_agent_runtime(entry)
   end
 
   defp retry_entry_payload(entry) do
@@ -132,6 +133,7 @@ defmodule SymphonyElixirWeb.Presenter do
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path)
     }
+    |> with_agent_runtime(entry)
   end
 
   defp blocked_entry_payload(entry) do
@@ -149,6 +151,7 @@ defmodule SymphonyElixirWeb.Presenter do
       last_message: summarize_message(entry.last_codex_message),
       last_event_at: iso8601(entry.last_codex_timestamp)
     }
+    |> with_agent_runtime(entry)
   end
 
   defp running_issue_payload(running) do
@@ -168,6 +171,7 @@ defmodule SymphonyElixirWeb.Presenter do
         total_tokens: running.codex_total_tokens
       }
     }
+    |> with_agent_runtime(running)
   end
 
   defp retry_issue_payload(retry) do
@@ -178,6 +182,7 @@ defmodule SymphonyElixirWeb.Presenter do
       worker_host: Map.get(retry, :worker_host),
       workspace_path: Map.get(retry, :workspace_path)
     }
+    |> with_agent_runtime(retry)
   end
 
   defp blocked_issue_payload(blocked) do
@@ -192,7 +197,13 @@ defmodule SymphonyElixirWeb.Presenter do
       last_message: summarize_message(blocked.last_codex_message),
       last_event_at: iso8601(blocked.last_codex_timestamp)
     }
+    |> with_agent_runtime(blocked)
   end
+
+  defp with_agent_runtime(payload, %{agent_runtime: runtime}) when is_binary(runtime),
+    do: Map.put(payload, :agent_runtime, runtime)
+
+  defp with_agent_runtime(payload, _entry), do: payload
 
   defp workspace_path(issue_identifier, running, retry, blocked) do
     (running && Map.get(running, :workspace_path)) ||

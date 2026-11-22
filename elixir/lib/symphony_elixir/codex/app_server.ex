@@ -405,32 +405,13 @@ defmodule SymphonyElixir.Codex.AppServer do
 
     case Jason.decode(payload_string) do
       {:ok, %{"method" => "turn/completed"} = payload} ->
-        emit_turn_event(on_message, :turn_completed, payload, payload_string, port, payload)
-        {:ok, :turn_completed}
+        finish_turn(on_message, payload, payload_string, port)
 
       {:ok, %{"method" => "turn/failed", "params" => _} = payload} ->
-        emit_turn_event(
-          on_message,
-          :turn_failed,
-          payload,
-          payload_string,
-          port,
-          Map.get(payload, "params")
-        )
-
-        {:error, {:turn_failed, Map.get(payload, "params")}}
+        finish_unsuccessful_turn(on_message, :turn_failed, payload, payload_string, port)
 
       {:ok, %{"method" => "turn/cancelled", "params" => _} = payload} ->
-        emit_turn_event(
-          on_message,
-          :turn_cancelled,
-          payload,
-          payload_string,
-          port,
-          Map.get(payload, "params")
-        )
-
-        {:error, {:turn_cancelled, Map.get(payload, "params")}}
+        finish_unsuccessful_turn(on_message, :turn_cancelled, payload, payload_string, port)
 
       {:ok, %{"method" => method} = payload}
       when is_binary(method) ->
@@ -475,6 +456,25 @@ defmodule SymphonyElixir.Codex.AppServer do
 
         receive_loop(port, on_message, timeout_ms, "", tool_executor, auto_approve_requests)
     end
+  end
+
+  defp finish_turn(on_message, %{"params" => %{"turn" => %{"status" => "failed"}}} = payload, payload_string, port) do
+    finish_unsuccessful_turn(on_message, :turn_failed, payload, payload_string, port)
+  end
+
+  defp finish_turn(on_message, %{"params" => %{"turn" => %{"status" => "interrupted"}}} = payload, payload_string, port) do
+    finish_unsuccessful_turn(on_message, :turn_cancelled, payload, payload_string, port)
+  end
+
+  defp finish_turn(on_message, payload, payload_string, port) do
+    emit_turn_event(on_message, :turn_completed, payload, payload_string, port, payload)
+    {:ok, :turn_completed}
+  end
+
+  defp finish_unsuccessful_turn(on_message, event, payload, payload_string, port) do
+    params = Map.get(payload, "params")
+    emit_turn_event(on_message, event, payload, payload_string, port, params)
+    {:error, {event, params}}
   end
 
   defp emit_turn_event(on_message, event, payload, payload_string, port, payload_details) do

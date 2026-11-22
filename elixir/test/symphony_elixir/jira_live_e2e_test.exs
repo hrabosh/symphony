@@ -402,11 +402,11 @@ defmodule SymphonyElixir.Jira.LiveE2ETest do
 
   defp receive_runtime_info!(issue_id) do
     receive do
-      {:worker_runtime_info, ^issue_id, %{workspace_path: workspace_path} = runtime_info}
+      {:worker_runtime_info, ^issue_id, _worker, %{workspace_path: workspace_path} = runtime_info}
       when is_binary(workspace_path) ->
         runtime_info
 
-      {:codex_worker_update, ^issue_id, _message} ->
+      {:agent_worker_update, ^issue_id, _worker, _message} ->
         receive_runtime_info!(issue_id)
     after
       5_000 ->
@@ -416,10 +416,10 @@ defmodule SymphonyElixir.Jira.LiveE2ETest do
 
   defp completed_jira_tool_calls(issue_id, calls \\ []) do
     receive do
-      {:codex_worker_update, ^issue_id, %{event: :tool_call_completed, payload: %{"params" => params}}} ->
+      {:agent_worker_update, ^issue_id, _worker, %{event: :tool_call_completed, message: %{"params" => params}}} ->
         completed_jira_tool_calls(issue_id, [params | calls])
 
-      {:codex_worker_update, ^issue_id, _message} ->
+      {:agent_worker_update, ^issue_id, _worker, _message} ->
         completed_jira_tool_calls(issue_id, calls)
     after
       0 ->

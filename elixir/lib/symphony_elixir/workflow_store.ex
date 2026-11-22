@@ -155,9 +155,7 @@ defmodule SymphonyElixir.WorkflowStore do
   end
 
   defp load_state(path) do
-    with {:ok, workflow} <- Workflow.load(path),
-         {:ok, settings} <- Schema.parse(workflow.config),
-         :ok <- Config.validate_settings(settings),
+    with {:ok, workflow, settings} <- Config.load_workflow(path),
          {:ok, stamp} <- current_stamp(path) do
       {:ok, %State{path: path, stamp: stamp, workflow: workflow, settings: settings}}
     else

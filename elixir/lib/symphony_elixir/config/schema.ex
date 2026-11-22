@@ -145,10 +145,11 @@ defmodule SymphonyElixir.Config.Schema do
     use Ecto.Schema
     import Ecto.Changeset
 
-    alias SymphonyElixir.Config.Schema
+    alias SymphonyElixir.{AgentRuntime, Config.Schema}
 
     @primary_key false
     embedded_schema do
+      field(:runtime, :string, default: "codex")
       field(:max_concurrent_agents, :integer, default: 10)
       field(:max_turns, :integer, default: 20)
       field(:max_retry_backoff_ms, :integer, default: 300_000)
@@ -160,14 +161,42 @@ defmodule SymphonyElixir.Config.Schema do
       schema
       |> cast(
         attrs,
-        [:max_concurrent_agents, :max_turns, :max_retry_backoff_ms, :max_concurrent_agents_by_state],
+        [:runtime, :max_concurrent_agents, :max_turns, :max_retry_backoff_ms, :max_concurrent_agents_by_state],
         empty_values: []
       )
+      |> validate_inclusion(:runtime, AgentRuntime.names())
       |> validate_number(:max_concurrent_agents, greater_than: 0)
       |> validate_number(:max_turns, greater_than: 0)
       |> validate_number(:max_retry_backoff_ms, greater_than: 0)
       |> update_change(:max_concurrent_agents_by_state, &Schema.normalize_state_limits/1)
       |> Schema.validate_state_limits(:max_concurrent_agents_by_state)
+    end
+  end
+
+  defmodule ACP do
+    @moduledoc false
+    use Ecto.Schema
+    import Ecto.Changeset
+
+    @primary_key false
+    embedded_schema do
+      field(:command, :string)
+      field(:args, {:array, :string})
+      field(:approval_policy, :string, default: "block")
+      field(:read_timeout_ms, :integer, default: 5_000)
+      field(:turn_timeout_ms, :integer, default: 3_600_000)
+    end
+
+    @spec changeset(%__MODULE__{}, map()) :: Ecto.Changeset.t()
+    def changeset(schema, attrs) do
+      schema
+      |> cast(attrs, [:command, :args, :approval_policy, :read_timeout_ms, :turn_timeout_ms], empty_values: [])
+      |> validate_change(:command, fn :command, command ->
+        if String.trim(command) == "", do: [command: "can't be blank"], else: []
+      end)
+      |> validate_inclusion(:approval_policy, ["block", "allow_once"])
+      |> validate_number(:read_timeout_ms, greater_than: 0)
+      |> validate_number(:turn_timeout_ms, greater_than: 0)
     end
   end
 
@@ -295,6 +324,8 @@ defmodule SymphonyElixir.Config.Schema do
     embeds_one(:workspace, Workspace, on_replace: :update, defaults_to_struct: true)
     embeds_one(:worker, Worker, on_replace: :update, defaults_to_struct: true)
     embeds_one(:agent, Agent, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:antigravity, ACP, on_replace: :update, defaults_to_struct: true)
+    embeds_one(:claude_code, ACP, on_replace: :update, defaults_to_struct: true)
     embeds_one(:codex, Codex, on_replace: :update, defaults_to_struct: true)
     embeds_one(:hooks, Hooks, on_replace: :update, defaults_to_struct: true)
     embeds_one(:observability, Observability, on_replace: :update, defaults_to_struct: true)
@@ -389,6 +420,8 @@ defmodule SymphonyElixir.Config.Schema do
     |> cast_embed(:workspace, with: &Workspace.changeset/2)
     |> cast_embed(:worker, with: &Worker.changeset/2)
     |> cast_embed(:agent, with: &Agent.changeset/2)
+    |> cast_embed(:antigravity, with: &ACP.changeset/2)
+    |> cast_embed(:claude_code, with: &ACP.changeset/2)
     |> cast_embed(:codex, with: &Codex.changeset/2)
     |> cast_embed(:hooks, with: &Hooks.changeset/2)
     |> cast_embed(:observability, with: &Observability.changeset/2)
@@ -460,7 +493,18 @@ defmodule SymphonyElixir.Config.Schema do
         turn_sandbox_policy: normalize_optional_map(settings.codex.turn_sandbox_policy)
     }
 
-    %{settings | tracker: tracker, workspace: workspace, codex: codex}
+    %{
+      settings
+      | tracker: tracker,
+        workspace: workspace,
+        codex: codex,
+        antigravity: acp_defaults(settings.antigravity, "agy", ["acp", "--sandbox"]),
+        claude_code: acp_defaults(settings.claude_code, "claude-agent-acp", [])
+    }
+  end
+
+  defp acp_defaults(settings, command, args) do
+    %{settings | command: settings.command || command, args: settings.args || args}
   end
 
   defp normalize_keys(value) when is_map(value) do

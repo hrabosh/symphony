@@ -113,13 +113,28 @@ defmodule SymphonyElixir.Config do
     end
   end
 
+  @doc "Loads and validates an explicit workflow without updating the workflow store."
+  @spec load_workflow(Path.t()) :: {:ok, Workflow.loaded_workflow(), Schema.t()} | {:error, term()}
+  def load_workflow(path) do
+    with {:ok, workflow} <- Workflow.load(path),
+         {:ok, settings} <- Schema.parse(workflow.config),
+         :ok <- validate_settings(settings) do
+      {:ok, workflow, settings}
+    end
+  end
+
   @doc false
   @spec validate_settings(Schema.t()) :: :ok | {:error, term()}
   def validate_settings(settings) do
-    if is_nil(settings.tracker.kind) do
-      {:error, :missing_tracker_kind}
-    else
-      Tracker.validate_config(settings.tracker)
+    cond do
+      is_nil(settings.tracker.kind) ->
+        {:error, :missing_tracker_kind}
+
+      settings.agent.runtime in ["antigravity", "claude_code"] and settings.worker.ssh_hosts != [] ->
+        {:error, {:invalid_workflow_config, "ACP agent runtimes require a local worker. Remove worker.ssh_hosts."}}
+
+      true ->
+        Tracker.validate_config(settings.tracker)
     end
   end
 

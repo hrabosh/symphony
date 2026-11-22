@@ -445,6 +445,10 @@ Fields:
 
 Fields:
 
+- `runtime` (string, optional runtime-selection extension)
+  - Default: `codex`.
+  - Implementations that support runtime selection MUST reject unsupported runtime names.
+  - Selection applies to new worker attempts. Each attempt uses the same runtime for its lifetime.
 - `max_concurrent_agents` (integer)
   - Default: `10`
   - Changes SHOULD be re-applied at runtime and affect subsequent dispatch decisions.
@@ -602,6 +606,11 @@ Validation checks:
   resolution.
 - `codex.command` is present and non-empty.
 
+The Elixir CLI also provides `symphony check <path-to-WORKFLOW.md>` as an operator preflight.
+It loads and validates the explicit workflow without starting the scheduler or running hooks.
+It reports executable availability and any runtime login status it can establish. An unavailable
+probe is reported as unverified. A confirmed failure exits nonzero.
+
 ### 6.4 Core Config Fields Summary (Cheat Sheet)
 
 This section is intentionally redundant so a coding agent can implement the config layer quickly.
@@ -620,6 +629,7 @@ not require recognizing or validating extension fields unless that extension is 
 - `hooks.after_run`: shell script or null
 - `hooks.before_remove`: shell script or null
 - `hooks.timeout_ms`: integer, default `60000`
+- `agent.runtime`: string, default `codex` (runtime-selection extension)
 - `agent.max_concurrent_agents`: integer, default `10`
 - `agent.max_turns`: integer, default `20`
 - `agent.max_retry_backoff_ms`: integer, default `300000` (5m)
@@ -952,6 +962,23 @@ Invariant 3: Workspace key is sanitized.
 This section defines Symphony's language-neutral responsibilities when integrating a Codex
 app-server. The Codex app-server protocol for the targeted Codex version is the source of truth for
 protocol schemas, message payloads, transport framing, and method names.
+
+Implementations may offer additional runtimes under `agent.runtime`. A runtime starts a session
+in the issue workspace, accepts prompts, reports progress and turn outcomes, and stops with its
+worker. The scheduler owns dispatch, retries, and tracker reconciliation for every runtime.
+Runtime integrations translate completion, failure, cancellation, and operator input or approval
+into shared outcomes. Session identifiers and usage are optional. The Codex-specific requirements
+below apply to the `codex` runtime.
+
+The Elixir `antigravity` profile uses ACP v1 over stdio on a local worker. It sets the session
+working directory to the issue workspace, responds to permission requests using
+`antigravity.approval_policy`, and attempts protocol cancellation before stopping a worker.
+The ACP client reports unsupported requests without granting client-side filesystem or terminal
+access. Tracker-native tools remain available to the Codex runtime.
+
+The Elixir `claude_code` profile uses the same local ACP v1 client with the Claude ACP adapter.
+It reads its executable, arguments, approval policy, and timeouts from `claude_code` settings.
+The status interface may expose the runtime name of each attempt as `agent_runtime`.
 
 Protocol source of truth:
 

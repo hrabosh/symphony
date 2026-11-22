@@ -18,7 +18,7 @@ defmodule SymphonyElixir.SSH do
           :binary,
           :exit_status,
           :stderr_to_stdout,
-          args: Enum.map(ssh_args(host, command), &String.to_charlist/1)
+          args: Enum.map(ssh_args(host, command, Keyword.get(opts, :batch_check, false)), &String.to_charlist/1)
         ]
         |> maybe_put_line_option(line_bytes)
 
@@ -38,15 +38,22 @@ defmodule SymphonyElixir.SSH do
     end
   end
 
-  defp ssh_args(host, command) do
+  defp ssh_args(host, command, batch_check? \\ false) do
     %{destination: destination, port: port} = parse_target(host)
 
     []
     |> maybe_put_config()
+    |> maybe_put_batch_options(batch_check?)
     |> Kernel.++(["-T"])
     |> maybe_put_port(port)
     |> Kernel.++([destination, remote_shell_command(command)])
   end
+
+  defp maybe_put_batch_options(args, true) do
+    args ++ ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "UpdateHostKeys=no", "-o", "PermitLocalCommand=no"]
+  end
+
+  defp maybe_put_batch_options(args, false), do: args
 
   defp maybe_put_line_option(port_opts, nil), do: port_opts
   defp maybe_put_line_option(port_opts, line_bytes), do: Keyword.put(port_opts, :line, line_bytes)

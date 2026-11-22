@@ -16,10 +16,9 @@ This directory contains the current Elixir/OTP implementation of Symphony, based
 1. Polls the configured tracker for candidate work (included adapters: Linear, GitHub Issues, Jira
    Cloud, Asana, and GitLab)
 2. Creates a workspace per issue
-3. Launches Codex in [App Server mode](https://developers.openai.com/codex/app-server/) inside the
-   workspace
-4. Sends a workflow prompt to Codex
-5. Keeps Codex working on the issue until the work is done
+3. Launches Codex, Antigravity, or Claude Code inside the workspace.
+4. Sends a workflow prompt to the agent.
+5. Keeps the agent working on the issue while the tracker marks it active.
 
 During app-server sessions, the selected tracker adapter may advertise provider-native tools. The
 Linear serves `linear_graphql`, GitHub Issues serves `github_api`, Jira Cloud serves
@@ -77,8 +76,9 @@ mise exec -- ./bin/symphony ./WORKFLOW.md
 ## Burrito releases
 
 Symphony ships self-contained executables built with
-[Burrito](https://github.com/burrito-elixir/burrito). They embed Erlang/OTP, Elixir, and Symphony,
-but still expect `codex`, `git`, and the selected tracker credentials on the target machine.
+[Burrito](https://github.com/burrito-elixir/burrito). They embed Erlang/OTP, Elixir, and Symphony.
+Install `git` and the selected agent CLI on the worker, and configure the tracker credentials
+for Symphony.
 
 Supported release targets:
 
@@ -119,7 +119,22 @@ Optional flags:
 - `--port` also starts the Phoenix observability service (default: disabled)
 
 The `WORKFLOW.md` file uses YAML front matter for configuration, plus a Markdown body used as the
-Codex session prompt.
+agent session prompt.
+
+Validate a workflow and check the selected runtime before starting the service:
+
+```bash
+./bin/symphony check ./WORKFLOW.md
+```
+
+The check uses the same workflow validation as startup. It resolves the selected executable in
+the worker environment. For a standard local Codex launch it runs `codex login status`. For a
+Claude ACP adapter on PATH it runs `claude-agent-acp --cli auth status --json`. Antigravity,
+custom launchers, and SSH workers report runtime authentication as unverified. SSH checks use
+non-interactive connections and require the host key to be known. A confirmed validation failure,
+missing executable, or missing or rejected login returns exit status 1. Unverified checks can
+return success. The command starts no scheduler, executes no workspace hooks, and makes no tracker
+writes.
 
 Minimal example:
 
@@ -135,6 +150,7 @@ hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
 agent:
+  runtime: codex
   max_concurrent_agents: 10
   max_turns: 20
 codex:
@@ -149,6 +165,8 @@ Title: {{ issue.title }} Body: {{ issue.description }}
 Notes:
 
 - If a value is missing, defaults are used.
+- `agent.runtime` selects `codex` (the default), `antigravity`, or `claude_code`. Unknown values
+  fail workflow validation. Keep Codex App Server settings under `codex`.
 - `tracker.kind` selects an adapter. Adapter-owned endpoint, scope, and auth settings belong under
   `tracker.provider`; the current Linear adapter still accepts the older flat `endpoint`,
   `api_key`, `project_slug`, and `assignee` aliases for compatibility.
@@ -169,7 +187,7 @@ Notes:
 - Workflows that run package managers or other commands that resolve external hosts should set
   `networkAccess: true` in `codex.turn_sandbox_policy`; otherwise DNS/network access may be denied
   by the Codex turn sandbox.
-- `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
+- `agent.max_turns` caps how many back-to-back turns Symphony will run in a single agent
   invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
 - If the Markdown body is blank, Symphony uses a default prompt template that includes the issue
   identifier, title, and body.
@@ -293,6 +311,76 @@ codex:
 - `gitlab_api` forwards raw GitLab REST requests with host-side auth and keeps configured tracker
   credentials and provider authentication aliases out of the Codex child.
 
+## Antigravity runtime
+
+Install Antigravity CLI on the machine running Symphony. Use `agy --version` and `agy acp --help`
+to check availability. Authenticate as the worker user with `agy acp --login` or configure Gemini
+credentials for the worker. The ACP profile currently runs on local workers. [Google ACP setup](https://antigravity.google/docs/ide/extensions/acp/)
+
+```yaml
+agent:
+  runtime: antigravity
+antigravity:
+  command: agy
+  args: [acp, --sandbox]
+  approval_policy: block
+  read_timeout_ms: 5000
+  turn_timeout_ms: 3600000
+```
+
+The `antigravity` section shows the defaults. The command is an executable on the worker's PATH
+or an absolute executable path. Arguments pass directly to the executable. The read timeout applies
+to each startup request. The turn timeout applies to silence between progress updates. With
+`block`, Symphony cancels the turn and records the approval request as blocked. With
+`allow_once`, Symphony selects the one-time permission option when the agent offers it. Input
+requests and missing authentication also block the issue. Tracker-native tools are currently
+available through the Codex profile.
+
+Antigravity applies its configured permission rules before asking Symphony. Keep `block` for
+unattended runs that require operator approval for prompted actions. `allow_once` can approve
+a request to run outside the Antigravity terminal sandbox. During cancellation, Symphony sends
+`session/cancel` and waits briefly, then stops the worker and closes stdio. Custom ACP commands
+must exit when their input closes.
+
+## Claude Code runtime
+
+Install the Claude ACP adapter on the local worker. With Node.js 22 or newer, install the
+version used by the smoke test. [Claude ACP adapter](https://github.com/agentclientprotocol/claude-agent-acp)
+
+```bash
+npm install --global @agentclientprotocol/claude-agent-acp@0.109.1
+claude-agent-acp --version
+claude-agent-acp --cli auth login
+```
+
+Authenticate as the worker user. Use the adapter's bundled Claude CLI login or configure
+`ANTHROPIC_API_KEY` in the worker environment. Set `command` to an absolute executable path when
+the adapter is outside the worker's PATH. The profile runs on local workers and shares the
+Antigravity profile's ACP approval and timeout semantics. Configure Claude Code's tool permissions
+and sandbox in the worker's Claude settings.
+
+```yaml
+agent:
+  runtime: claude_code
+claude_code:
+  command: claude-agent-acp
+  args: []
+  approval_policy: block
+  read_timeout_ms: 5000
+  turn_timeout_ms: 3600000
+```
+
+## Live agent comparison
+
+Install and authenticate the three runtimes before running the live comparison. It schedules the
+same synthetic issue through the memory tracker and verifies the diff and test result in disposable
+local Git workspaces. Set `SYMPHONY_CLAUDE_ACP_BIN` to use an adapter outside PATH.
+The comparison passed with Codex CLI 0.171.0, Antigravity CLI 1.5.3, and Claude ACP adapter 0.109.1.
+
+```bash
+SYMPHONY_RUN_AGENT_RUNTIME_SMOKE=1 mix test test/symphony_elixir/agent_runtime_live_smoke_test.exs
+```
+
 ## Web dashboard
 
 The observability UI now runs on a minimal Phoenix stack:
@@ -302,6 +390,8 @@ The observability UI now runs on a minimal Phoenix stack:
 - Bandit as the HTTP server
 - Phoenix dependency static assets for the LiveView client bootstrap
 - Tracker issue identifiers link to the tracker-provided URL when it uses `http` or `https`
+- Running, blocked, and retrying entries show the selected agent runtime in the web dashboard and
+  include `agent_runtime` in the JSON API when available.
 
 ## Project Layout
 

@@ -1,6 +1,8 @@
 defmodule SymphonyElixir.OrchestratorStatusTest do
   use SymphonyElixir.TestSupport
 
+  alias SymphonyElixir.Codex.Runtime, as: CodexRuntime
+
   test "snapshot returns :timeout when snapshot server is unresponsive" do
     server_name = Module.concat(__MODULE__, :UnresponsiveSnapshotServer)
     parent = self()
@@ -67,25 +69,17 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
     now = DateTime.utc_now()
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :session_started,
-         session_id: "thread-live-turn-live",
-         timestamp: now
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :session_started,
+      session_id: "thread-live-turn-live",
+      timestamp: now
+    })
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{method: "some-event"},
-         timestamp: now
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{method: "some-event"},
+      timestamp: now
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -154,33 +148,25 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
     now = DateTime.utc_now()
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :session_started,
-         session_id: "thread-usage-turn-usage",
-         timestamp: now
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :session_started,
+      session_id: "thread-usage-turn-usage",
+      timestamp: now
+    })
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "thread/tokenUsage/updated",
-           "params" => %{
-             "tokenUsage" => %{
-               "total" => %{"inputTokens" => 12, "outputTokens" => 4, "totalTokens" => 16}
-             }
-           }
-         },
-         timestamp: now,
-         codex_app_server_pid: "4242"
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "thread/tokenUsage/updated",
+        "params" => %{
+          "tokenUsage" => %{
+            "total" => %{"inputTokens" => 12, "outputTokens" => 4, "totalTokens" => 16}
+          }
+        }
+      },
+      timestamp: now,
+      codex_app_server_pid: "4242"
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -249,18 +235,14 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
     end)
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :turn_completed,
-         payload: %{
-           method: "turn/completed",
-           usage: %{"input_tokens" => "12", "output_tokens" => 4, "total_tokens" => 16}
-         },
-         timestamp: DateTime.utc_now()
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :turn_completed,
+      payload: %{
+        method: "turn/completed",
+        usage: %{"input_tokens" => "12", "output_tokens" => 4, "total_tokens" => 16}
+      },
+      timestamp: DateTime.utc_now()
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -326,53 +308,45 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
     now = DateTime.utc_now()
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "codex/event/token_count",
-           "params" => %{
-             "msg" => %{
-               "type" => "token_count",
-               "info" => %{
-                 "total_token_usage" => %{
-                   "input_tokens" => "2",
-                   "output_tokens" => 2,
-                   "total_tokens" => 4
-                 }
-               }
-             }
-           }
-         },
-         timestamp: now
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "codex/event/token_count",
+        "params" => %{
+          "msg" => %{
+            "type" => "token_count",
+            "info" => %{
+              "total_token_usage" => %{
+                "input_tokens" => "2",
+                "output_tokens" => 2,
+                "total_tokens" => 4
+              }
+            }
+          }
+        }
+      },
+      timestamp: now
+    })
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "codex/event/token_count",
-           "params" => %{
-             "msg" => %{
-               "type" => "token_count",
-               "info" => %{
-                 "total_token_usage" => %{
-                   "prompt_tokens" => 10,
-                   "completion_tokens" => 5,
-                   "total_tokens" => 15
-                 }
-               }
-             }
-           }
-         },
-         timestamp: DateTime.utc_now()
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "codex/event/token_count",
+        "params" => %{
+          "msg" => %{
+            "type" => "token_count",
+            "info" => %{
+              "total_token_usage" => %{
+                "prompt_tokens" => 10,
+                "completion_tokens" => 5,
+                "total_tokens" => 15
+              }
+            }
+          }
+        }
+      },
+      timestamp: DateTime.utc_now()
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -444,26 +418,22 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       "credits" => %{"has_credits" => false, "unlimited" => false, "balance" => nil}
     }
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "codex/event/token_count",
-           "params" => %{
-             "msg" => %{
-               "type" => "event_msg",
-               "payload" => %{
-                 "type" => "token_count",
-                 "rate_limits" => rate_limits
-               }
-             }
-           }
-         },
-         timestamp: DateTime.utc_now()
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "codex/event/token_count",
+        "params" => %{
+          "msg" => %{
+            "type" => "event_msg",
+            "payload" => %{
+              "type" => "token_count",
+              "rate_limits" => rate_limits
+            }
+          }
+        }
+      },
+      timestamp: DateTime.utc_now()
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert snapshot.rate_limits == rate_limits
@@ -518,37 +488,33 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
     end)
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "codex/event/token_count",
-           "params" => %{
-             "msg" => %{
-               "type" => "event_msg",
-               "payload" => %{
-                 "type" => "token_count",
-                 "info" => %{
-                   "last_token_usage" => %{
-                     "input_tokens" => 2,
-                     "output_tokens" => 1,
-                     "total_tokens" => 3
-                   },
-                   "total_token_usage" => %{
-                     "input_tokens" => 200,
-                     "output_tokens" => 100,
-                     "total_tokens" => 300
-                   }
-                 }
-               }
-             }
-           }
-         },
-         timestamp: DateTime.utc_now()
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "codex/event/token_count",
+        "params" => %{
+          "msg" => %{
+            "type" => "event_msg",
+            "payload" => %{
+              "type" => "token_count",
+              "info" => %{
+                "last_token_usage" => %{
+                  "input_tokens" => 2,
+                  "output_tokens" => 1,
+                  "total_tokens" => 3
+                },
+                "total_token_usage" => %{
+                  "input_tokens" => 200,
+                  "output_tokens" => 100,
+                  "total_tokens" => 300
+                }
+              }
+            }
+          }
+        }
+      },
+      timestamp: DateTime.utc_now()
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -610,18 +576,14 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
           %{"input_tokens" => 8, "output_tokens" => 3, "total_tokens" => 11},
           %{"input_tokens" => 10, "output_tokens" => 4, "total_tokens" => 14}
         ] do
-      send(
-        pid,
-        {:codex_worker_update, issue_id,
-         %{
-           event: :notification,
-           payload: %{
-             "method" => "thread/tokenUsage/updated",
-             "params" => %{"tokenUsage" => %{"total" => usage}}
-           },
-           timestamp: DateTime.utc_now()
-         }}
-      )
+      send_codex_update(pid, issue_id, %{
+        event: :notification,
+        payload: %{
+          "method" => "thread/tokenUsage/updated",
+          "params" => %{"tokenUsage" => %{"total" => usage}}
+        },
+        timestamp: DateTime.utc_now()
+      })
     end
 
     snapshot = GenServer.call(pid, :snapshot)
@@ -680,32 +642,28 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
     end)
 
-    send(
-      pid,
-      {:codex_worker_update, issue_id,
-       %{
-         event: :notification,
-         payload: %{
-           "method" => "codex/event/token_count",
-           "params" => %{
-             "msg" => %{
-               "type" => "event_msg",
-               "payload" => %{
-                 "type" => "token_count",
-                 "info" => %{
-                   "last_token_usage" => %{
-                     "input_tokens" => 8,
-                     "output_tokens" => 3,
-                     "total_tokens" => 11
-                   }
-                 }
-               }
-             }
-           }
-         },
-         timestamp: DateTime.utc_now()
-       }}
-    )
+    send_codex_update(pid, issue_id, %{
+      event: :notification,
+      payload: %{
+        "method" => "codex/event/token_count",
+        "params" => %{
+          "msg" => %{
+            "type" => "event_msg",
+            "payload" => %{
+              "type" => "token_count",
+              "info" => %{
+                "last_token_usage" => %{
+                  "input_tokens" => 8,
+                  "output_tokens" => 3,
+                  "total_tokens" => 11
+                }
+              }
+            }
+          }
+        }
+      },
+      timestamp: DateTime.utc_now()
+    })
 
     snapshot = GenServer.call(pid, :snapshot)
     assert %{running: [snapshot_entry]} = snapshot
@@ -1012,13 +970,9 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       worker_host: "dm-dev2",
       workspace_path: "/workspaces/MT-MCP",
       session_id: "thread-mcp-turn-mcp",
-      last_codex_message: %{
-        event: :notification,
-        message: %{"method" => "mcpServer/elicitation/request"},
-        timestamp: stale_activity_at
-      },
-      last_codex_timestamp: stale_activity_at,
-      last_codex_event: :notification,
+      last_codex_message: nil,
+      last_codex_timestamp: nil,
+      last_codex_event: nil,
       started_at: stale_activity_at
     }
 
@@ -1029,6 +983,13 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       |> Map.put(:running, %{issue_id => running_entry})
       |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
     end)
+
+    send_codex_update(
+      pid,
+      issue_id,
+      %{event: :notification, payload: %{"method" => "mcpServer/elicitation/request"}, timestamp: stale_activity_at},
+      worker_pid
+    )
 
     send(pid, :tick)
     Process.sleep(100)
@@ -1088,6 +1049,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       },
       last_codex_timestamp: started_at,
       last_codex_event: :turn_input_required,
+      blocker: {:input_required, "codex turn requires operator input"},
       started_at: started_at
     }
 
@@ -1113,7 +1075,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
            } = state.blocked[issue_id]
   end
 
-  test "orchestrator blocks normal worker exits after input required completion" do
+  test "orchestrator blocks a worker that exits with an input required outcome" do
     write_workflow_file!(Workflow.workflow_file_path(), tracker_kind: "memory")
 
     issue_id = "issue-input-required-normal"
@@ -1140,7 +1102,6 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
         dispatchable: true
       },
       session_id: "thread-input-normal",
-      completion: %{outcome: :input_required},
       last_codex_message: nil,
       last_codex_timestamp: nil,
       last_codex_event: nil,
@@ -1155,7 +1116,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       |> Map.put(:claimed, MapSet.put(initial_state.claimed, issue_id))
     end)
 
-    send(pid, {:DOWN, ref, :process, self(), :normal})
+    send(pid, {:DOWN, ref, :process, self(), {:shutdown, {:agent_blocked, {:input_required, "codex turn requires operator input"}}}})
     Process.sleep(50)
     state = :sys.get_state(pid)
 
@@ -1799,5 +1760,9 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
       {next_tokens, [{timestamp, next_tokens} | acc]}
     end)
     |> elem(1)
+  end
+
+  defp send_codex_update(server, issue_id, update, worker \\ self()) do
+    send(server, {:agent_worker_update, issue_id, worker, CodexRuntime.normalize_update(update)})
   end
 end

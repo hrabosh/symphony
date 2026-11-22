@@ -28,6 +28,7 @@ hooks:
   before_remove: |
     cd elixir && mise exec -- mix workspace.before_remove
 agent:
+  runtime: codex # Local ACP profiles are antigravity and claude_code.
   max_concurrent_agents: 10
   max_turns: 20
 codex:

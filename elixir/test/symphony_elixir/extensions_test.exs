@@ -482,7 +482,9 @@ defmodule SymphonyElixir.ExtensionsTest do
 
   test "dashboard liveview renders and refreshes over pubsub" do
     orchestrator_name = Module.concat(__MODULE__, :DashboardOrchestrator)
-    snapshot = static_snapshot()
+
+    snapshot =
+      update_in(static_snapshot().running, fn [entry] -> [Map.put(entry, :agent_runtime, "claude_code")] end)
 
     {:ok, orchestrator_pid} =
       StaticOrchestrator.start_link(
@@ -513,7 +515,9 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Live"
     assert html =~ "Offline"
     assert html =~ "Copy ID"
-    assert html =~ "Codex update"
+    assert html =~ "Agent update"
+    assert html =~ "Claude Code"
+    assert html =~ "Total agent runtime across completed and active sessions."
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
